@@ -1,0 +1,40 @@
+# IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+
+# Gradle/Kotlin
+.gradle/
+.kotlin/
+**/build/
+**/out/
+local.properties
+
+# Android
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Rust
+**/target/
+**/*.rs.bk
+
+# Node
+node_modules/
+
+# macOS + Xcode
+.DS_Store
+xcuserdata
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcodeproj/project.xcworkspace/
+!*.xcworkspace/contents.xcworkspacedata
+**/xcshareddata/WorkspaceSettings.xcsettings
+
+# Compose/Skiko native libs
+libskiko-*.dylib
+libskiko-*.dylib.sha256
