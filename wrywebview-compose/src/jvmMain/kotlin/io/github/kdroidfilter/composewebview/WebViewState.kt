@@ -11,6 +11,8 @@ import io.github.kdroidfilter.composewebview.wry.WryWebViewPanel
 @Stable
 class WebViewState(initialUrl: String) {
     internal var panel: WryWebViewPanel? = null
+    private val history = mutableListOf<String>()
+    private var historyIndex: Int = -1
 
     /**
      * The target URL to navigate to. Changing this will trigger navigation.
@@ -80,7 +82,8 @@ class WebViewState(initialUrl: String) {
             if (p.isReady()) {
                 // Get current URL from native state
                 p.getCurrentUrl()?.let { newUrl ->
-                    if (newUrl.isNotEmpty()) {
+                    if (newUrl.isNotEmpty() && newUrl != currentUrl) {
+                        updateHistory(newUrl)
                         currentUrl = newUrl
                     }
                 }
@@ -88,6 +91,30 @@ class WebViewState(initialUrl: String) {
                 isLoading = p.isLoading()
             }
         }
+    }
+
+    private fun updateHistory(newUrl: String) {
+        if (historyIndex >= 0) {
+            val backUrl = history.getOrNull(historyIndex - 1)
+            val forwardUrl = history.getOrNull(historyIndex + 1)
+            when (newUrl) {
+                backUrl -> historyIndex -= 1
+                forwardUrl -> historyIndex += 1
+                else -> {
+                    if (historyIndex < history.size - 1) {
+                        history.subList(historyIndex + 1, history.size).clear()
+                    }
+                    history.add(newUrl)
+                    historyIndex = history.lastIndex
+                }
+            }
+        } else {
+            history.add(newUrl)
+            historyIndex = 0
+        }
+
+        canGoBack = historyIndex > 0
+        canGoForward = historyIndex >= 0 && historyIndex < history.size - 1
     }
 }
 
