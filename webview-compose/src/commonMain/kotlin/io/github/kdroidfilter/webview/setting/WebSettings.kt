@@ -27,7 +27,7 @@ class WebSettings {
 
     var allowUniversalAccessFromFileURLs: Boolean by mutableStateOf(false)
 
-    private var logSeverityState: KLogSeverity by mutableStateOf(KLogSeverity.Info)
+    private var logSeverityState: KLogSeverity by mutableStateOf(KLogSeverity.None)
 
     var logSeverity: KLogSeverity
         get() = logSeverityState
