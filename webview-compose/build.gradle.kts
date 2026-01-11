@@ -92,7 +92,7 @@ fun org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget.setUpiOSObserver()
 }
 
 mavenPublishing {
-    configure(KotlinMultiplatform(sourcesJar = true))
+    configure(KotlinMultiplatform(androidVariantsToPublish = listOf("release"), sourcesJar = true))
     publishToMavenCentral()
     if (project.findProperty("signingInMemoryKey") != null) {
         signAllPublications()
