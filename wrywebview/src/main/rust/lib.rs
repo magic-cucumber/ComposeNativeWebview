@@ -147,16 +147,25 @@ fn cookie_from_record(cookie: WebViewCookie) -> Result<Cookie<'static>, WebViewE
     Ok(builder.build())
 }
 
-fn log_enabled() -> bool {
-    static LOG_ENABLED: OnceLock<bool> = OnceLock::new();
-    *LOG_ENABLED.get_or_init(|| {
-        std::env::var("WRYWEBVIEW_LOG")
-            .map(|value| {
-                let value = value.trim().to_ascii_lowercase();
-                matches!(value.as_str(), "1" | "true" | "yes" | "debug")
-            })
-            .unwrap_or(false)
-    })
+use std::sync::atomic::AtomicBool;
+
+static LOG_ENABLED: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn log_enabled() -> bool {
+    LOG_ENABLED.load(Ordering::Relaxed)
+}
+
+#[uniffi::export]
+pub fn set_log_enabled(enabled: bool) {
+    LOG_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+macro_rules! wry_log {
+    ($($arg:tt)*) => {
+        if log_enabled() {
+            eprintln!($($arg)*);
+        }
+    };
 }
 
 // ============================================================================
@@ -176,7 +185,7 @@ fn create_webview_inner(
             if trimmed.is_empty() { None } else { Some(trimmed) }
         });
 
-    eprintln!(
+    wry_log!(
         "[wrywebview] create_webview handle=0x{:x} size={}x{} url={} user_agent={}",
         parent_handle,
         width,
@@ -207,40 +216,40 @@ fn create_webview_inner(
 
     let webview = builder
         .with_navigation_handler(move |new_url| {
-            eprintln!("[wrywebview] navigation_handler url={}", new_url);
+            wry_log!("[wrywebview] navigation_handler url={}", new_url);
             state_for_nav.is_loading.store(true, Ordering::SeqCst);
             if let Err(e) = state_for_nav.update_current_url(new_url.clone()) {
-                eprintln!("[wrywebview] navigation_handler state update failed: {}", e);
+                wry_log!("[wrywebview] navigation_handler state update failed: {}", e);
             }
             true
         })
         .with_on_page_load_handler(move |event, url| {
             match event {
                 wry::PageLoadEvent::Started => {
-                    eprintln!("[wrywebview] page_load_handler event=Started url={}", url);
+                    wry_log!("[wrywebview] page_load_handler event=Started url={}", url);
                     state_for_load.is_loading.store(true, Ordering::SeqCst);
                 }
                 wry::PageLoadEvent::Finished => {
-                    eprintln!("[wrywebview] page_load_handler event=Finished url={}", url);
+                    wry_log!("[wrywebview] page_load_handler event=Finished url={}", url);
                     state_for_load.is_loading.store(false, Ordering::SeqCst);
                     if let Err(e) = state_for_load.update_current_url(url.clone()) {
-                        eprintln!("[wrywebview] page_load_handler state update failed: {}", e);
+                        wry_log!("[wrywebview] page_load_handler state update failed: {}", e);
                     }
                 }
             }
         })
         .with_document_title_changed_handler(move |title| {
-            eprintln!("[wrywebview] title_changed title={}", title);
+            wry_log!("[wrywebview] title_changed title={}", title);
             if let Err(e) = state_for_title.update_page_title(title) {
-                eprintln!("[wrywebview] title_changed state update failed: {}", e);
+                wry_log!("[wrywebview] title_changed state update failed: {}", e);
             }
         })
         .with_ipc_handler(move |request| {
             let url = request.uri().to_string();
             let message = request.into_body();
-            eprintln!("[wrywebview] ipc url={} body_len={}", url, message.len());
+            wry_log!("[wrywebview] ipc url={} body_len={}", url, message.len());
             if let Err(e) = state_for_ipc.push_ipc_message(message) {
-                eprintln!("[wrywebview] ipc queue push failed: {}", e);
+                wry_log!("[wrywebview] ipc queue push failed: {}", e);
             }
         })
         .build_as_child(&window)?;
@@ -258,7 +267,7 @@ fn create_webview_inner(
 
         // Connect to button-press-event to grab focus when clicked using X11
         gtk_widget.connect_button_press_event(|widget, _event| {
-            eprintln!("[wrywebview] button_press_event -> grab_focus");
+            wry_log!("[wrywebview] button_press_event -> grab_focus");
 
             // Use X11 focus directly for proper keyboard input
             if let Some(gdk_window) = widget.window() {
@@ -281,7 +290,7 @@ fn create_webview_inner(
                                         x11::xlib::RevertToParent,
                                         x11::xlib::CurrentTime,
                                     );
-                                    eprintln!("[wrywebview] button_press XSetInputFocus xid=0x{:x}", xid);
+                                    wry_log!("[wrywebview] button_press XSetInputFocus xid=0x{:x}", xid);
                                 }
                             }
                         }
@@ -292,11 +301,11 @@ fn create_webview_inner(
             widget.grab_focus();
             gtk::glib::Propagation::Proceed
         });
-        eprintln!("[wrywebview] gtk focus handling configured with X11 support");
+        wry_log!("[wrywebview] gtk focus handling configured with X11 support");
     }
 
     let id = register(webview, state)?;
-    eprintln!("[wrywebview] create_webview success id={}", id);
+    wry_log!("[wrywebview] create_webview success id={}", id);
     Ok(id)
 }
 
@@ -343,7 +352,7 @@ pub fn create_webview_with_user_agent(
 
 fn set_bounds_inner(id: u64, x: i32, y: i32, width: i32, height: i32) -> Result<(), WebViewError> {
     if log_enabled() {
-        eprintln!(
+        wry_log!(
             "[wrywebview] set_bounds id={} pos=({}, {}) size={}x{}",
             id, x, y, width, height
         );
@@ -381,7 +390,7 @@ pub fn set_bounds(id: u64, x: i32, y: i32, width: i32, height: i32) -> Result<()
 // ============================================================================
 
 fn load_url_inner(id: u64, url: String) -> Result<(), WebViewError> {
-    eprintln!("[wrywebview] load_url id={} url={}", id, url);
+    wry_log!("[wrywebview] load_url id={} url={}", id, url);
     if let Ok(state) = get_state(id) {
         state.is_loading.store(true, Ordering::SeqCst);
     }
@@ -404,7 +413,7 @@ fn load_url_with_headers_inner(
     url: String,
     headers: Vec<HttpHeader>,
 ) -> Result<(), WebViewError> {
-    eprintln!(
+    wry_log!(
         "[wrywebview] load_url_with_headers id={} url={} headers={}",
         id,
         url,
@@ -437,7 +446,7 @@ pub fn load_url_with_headers(
 }
 
 fn load_html_inner(id: u64, html: String) -> Result<(), WebViewError> {
-    eprintln!("[wrywebview] load_html id={} bytes={}", id, html.len());
+    wry_log!("[wrywebview] load_html id={} bytes={}", id, html.len());
     if let Ok(state) = get_state(id) {
         state.is_loading.store(true, Ordering::SeqCst);
     }
@@ -456,7 +465,7 @@ pub fn load_html(id: u64, html: String) -> Result<(), WebViewError> {
 }
 
 fn stop_loading_inner(id: u64) -> Result<(), WebViewError> {
-    eprintln!("[wrywebview] stop_loading id={}", id);
+    wry_log!("[wrywebview] stop_loading id={}", id);
     if let Ok(state) = get_state(id) {
         state.is_loading.store(false, Ordering::SeqCst);
     }
@@ -512,7 +521,7 @@ pub fn evaluate_javascript(
 }
 
 fn go_back_inner(id: u64) -> Result<(), WebViewError> {
-    eprintln!("[wrywebview] go_back id={}", id);
+    wry_log!("[wrywebview] go_back id={}", id);
     if let Ok(state) = get_state(id) {
         state.is_loading.store(true, Ordering::SeqCst);
     }
@@ -535,7 +544,7 @@ pub fn go_back(id: u64) -> Result<(), WebViewError> {
 }
 
 fn go_forward_inner(id: u64) -> Result<(), WebViewError> {
-    eprintln!("[wrywebview] go_forward id={}", id);
+    wry_log!("[wrywebview] go_forward id={}", id);
     if let Ok(state) = get_state(id) {
         state.is_loading.store(true, Ordering::SeqCst);
     }
@@ -558,7 +567,7 @@ pub fn go_forward(id: u64) -> Result<(), WebViewError> {
 }
 
 fn reload_inner(id: u64) -> Result<(), WebViewError> {
-    eprintln!("[wrywebview] reload id={}", id);
+    wry_log!("[wrywebview] reload id={}", id);
     if let Ok(state) = get_state(id) {
         state.is_loading.store(true, Ordering::SeqCst);
     }
@@ -585,7 +594,7 @@ pub fn reload(id: u64) -> Result<(), WebViewError> {
 // ============================================================================
 
 fn focus_inner(id: u64) -> Result<(), WebViewError> {
-    eprintln!("[wrywebview] focus id={}", id);
+    wry_log!("[wrywebview] focus id={}", id);
     with_webview(id, |webview| {
         // On Linux, we need to use X11 focus directly since the GTK widget
         // is embedded in a foreign (AWT/Swing) window hierarchy
@@ -629,7 +638,7 @@ fn focus_inner(id: u64) -> Result<(), WebViewError> {
                                         x11::xlib::RevertToParent,
                                         x11::xlib::CurrentTime,
                                     );
-                                    eprintln!("[wrywebview] XSetInputFocus xid=0x{:x}", xid);
+                                    wry_log!("[wrywebview] XSetInputFocus xid=0x{:x}", xid);
                                 }
                             }
                         }
@@ -639,7 +648,7 @@ fn focus_inner(id: u64) -> Result<(), WebViewError> {
 
             // Also call GTK grab_focus as a fallback
             gtk_widget.grab_focus();
-            eprintln!("[wrywebview] gtk grab_focus called");
+            wry_log!("[wrywebview] gtk grab_focus called");
         }
 
         webview
@@ -712,7 +721,7 @@ pub fn drain_ipc_messages(id: u64) -> Result<Vec<String>, WebViewError> {
 // ============================================================================
 
 fn get_cookies_for_url_inner(id: u64, url: String) -> Result<Vec<WebViewCookie>, WebViewError> {
-    eprintln!("[wrywebview] get_cookies_for_url id={} url={}", id, url);
+    wry_log!("[wrywebview] get_cookies_for_url id={} url={}", id, url);
     with_webview(id, |webview| {
         let cookies = webview.cookies_for_url(&url).map_err(WebViewError::from)?;
         Ok(cookies.iter().map(cookie_record_from).collect())
@@ -731,7 +740,7 @@ pub fn get_cookies_for_url(id: u64, url: String) -> Result<Vec<WebViewCookie>, W
 }
 
 fn clear_cookies_for_url_inner(id: u64, url: String) -> Result<(), WebViewError> {
-    eprintln!("[wrywebview] clear_cookies_for_url id={} url={}", id, url);
+    wry_log!("[wrywebview] clear_cookies_for_url id={} url={}", id, url);
     with_webview(id, |webview| {
         let cookies = webview.cookies_for_url(&url).map_err(WebViewError::from)?;
         for cookie in cookies {
@@ -755,7 +764,7 @@ pub fn clear_cookies_for_url(id: u64, url: String) -> Result<(), WebViewError> {
 }
 
 fn clear_all_cookies_inner(id: u64) -> Result<(), WebViewError> {
-    eprintln!("[wrywebview] clear_all_cookies id={}", id);
+    wry_log!("[wrywebview] clear_all_cookies id={}", id);
     with_webview(id, |webview| {
         let cookies = webview.cookies().map_err(WebViewError::from)?;
         for cookie in cookies {
@@ -779,7 +788,7 @@ pub fn clear_all_cookies(id: u64) -> Result<(), WebViewError> {
 }
 
 fn set_cookie_inner(id: u64, cookie: WebViewCookie) -> Result<(), WebViewError> {
-    eprintln!("[wrywebview] set_cookie id={} name={}", id, &cookie.name);
+    wry_log!("[wrywebview] set_cookie id={} name={}", id, &cookie.name);
     let native = cookie_from_record(cookie)?;
     with_webview(id, |webview| webview.set_cookie(&native).map_err(WebViewError::from))
 }
@@ -800,7 +809,7 @@ pub fn set_cookie(id: u64, cookie: WebViewCookie) -> Result<(), WebViewError> {
 // ============================================================================
 
 fn destroy_webview_inner(id: u64) -> Result<(), WebViewError> {
-    eprintln!("[wrywebview] destroy_webview id={}", id);
+    wry_log!("[wrywebview] destroy_webview id={}", id);
     unregister(id)
 }
 

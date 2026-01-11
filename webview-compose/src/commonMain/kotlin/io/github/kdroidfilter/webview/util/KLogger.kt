@@ -6,7 +6,7 @@ package io.github.kdroidfilter.webview.util
  * Keep logging simple and dependency-free across platforms.
  */
 internal object KLogger {
-    private var minSeverity: KLogSeverity = KLogSeverity.Info
+    private var minSeverity: KLogSeverity = KLogSeverity.None
 
     fun setMinSeverity(severity: KLogSeverity) {
         minSeverity = severity
@@ -39,4 +39,5 @@ enum class KLogSeverity {
     Warn,
     Error,
     Assert,
+    None,
 }
