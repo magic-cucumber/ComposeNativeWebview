@@ -192,7 +192,6 @@ pub fn do_internal_log(args: std::fmt::Arguments) {
 
     if let Ok(lock) = crate::get_logger_registry().read() {
         if let Some(ref logger) = *lock {
-            // 执行回调
             logger.handle_log(log_string);
             return;
         }
